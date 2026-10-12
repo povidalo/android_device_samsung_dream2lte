@@ -26,3 +26,6 @@ TARGET_KERNEL_CONFIG := exynos8895-dream2lte_defconfig
 
 # inherit from the proprietary version
 -include vendor/samsung/dream2lte/BoardConfigVendor.mk
+
+# headless_su (root daemon + su, no permission management)
+SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += device/samsung/dream2lte/headless_su/sepolicy

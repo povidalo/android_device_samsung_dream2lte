@@ -1,0 +1,15 @@
+# headless_su root daemon. Headless single-user server: any caller gets root
+# by design (no permission management). The daemon and the root shells it
+# spawns run in the permissive 'sud' domain; everything else stays enforcing.
+type sud, domain, coredomain, mlstrustedsubject, mlstrustedobject;
+permissive sud;
+
+# init starts /system/xbin/su (su_exec) with 'seclabel u:r:sud:s0'.
+allow init su_exec:file { getattr open read execute map };
+allow init sud:process { transition rlimitinh siginh noatsecure };
+allow sud su_exec:file { entrypoint getattr open read execute map };
+
+# Clients: any app (Termux), adb shell and su may run the client and reach
+# the daemon's abstract socket @headless_su.
+allow appdomain su_exec:file { getattr open read execute execute_no_trans map };
+allow { appdomain shell su } sud:unix_stream_socket connectto;

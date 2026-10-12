@@ -1,0 +1,6 @@
+# Root daemon for headless_su (/system/xbin/su). Grants root to any caller.
+service sud /system/xbin/su --daemon
+    class main
+    user root
+    group root
+    seclabel u:r:sud:s0

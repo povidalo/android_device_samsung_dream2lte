@@ -1,0 +1,13 @@
+// headless_su: root daemon + su client for this headless single-user server.
+// Any caller gets root - there is intentionally no permission management.
+// Replaces AOSP's debug su at /system/xbin/su (label su_exec).
+cc_binary {
+    name: "headless_su",
+    stem: "su",
+    srcs: ["su.c"],
+    install_in_xbin: true,
+    overrides: ["su"],
+    shared_libs: ["liblog"],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
+    init_rc: ["sud.rc"],
+}
