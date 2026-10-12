@@ -1,13 +1,31 @@
 // headless_su: root daemon + su client for this headless single-user server.
-// Any caller gets root - there is intentionally no permission management.
+// Root is gated by a password (default "root" until 'set_root_pwd' sets one).
 // Replaces AOSP's debug su at /system/xbin/su (label su_exec).
+
+// Shared password store (salted SHA-256): used by su and set_root_pwd.
+cc_library_static {
+    name: "libheadless_su_pw",
+    srcs: ["password.c"],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
+}
+
 cc_binary {
     name: "headless_su",
     stem: "su",
     srcs: ["su.c"],
     install_in_xbin: true,
     overrides: ["su"],
+    static_libs: ["libheadless_su_pw"],
     shared_libs: ["liblog"],
     cflags: ["-Wall", "-Wextra", "-Werror"],
     init_rc: ["sud.rc"],
+}
+
+// root-only helper to set/clear the su password (run via su or adb root).
+cc_binary {
+    name: "set_root_pwd",
+    srcs: ["set_root_pwd.c"],
+    install_in_xbin: true,
+    static_libs: ["libheadless_su_pw"],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
 }

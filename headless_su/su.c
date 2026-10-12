@@ -2,8 +2,11 @@
  * headless_su - root daemon + su client for a headless, single-user
  * LineageOS server (Galaxy S8+, dream2lte).
  *
- * Any caller gets root. There is intentionally NO permission management:
- * no prompts, no allowlist, no manager app.
+ * Any caller that knows the root password gets root. There is no per-app
+ * permission management (no prompts, no allowlist, no manager app); the
+ * password is the single gate. It defaults to "root" until 'set_root_pwd'
+ * writes a salted SHA-256 hash to /data/misc/headless_su/passwd, after which
+ * the default no longer works (see password.c).
  *
  *   su --daemon                               run the daemon (init: sud.rc)
  *   su [options] [-] [user [args...]]         client
@@ -53,8 +56,10 @@
 #include <android/log.h>
 #endif
 
-#define VERSION_NAME "headless_su 1.0 (no permission management)"
-#define VERSION_CODE 1
+#include "password.h"
+
+#define VERSION_NAME "headless_su 1.1 (password protected)"
+#define VERSION_CODE 2
 #define SOCKET_NAME "headless_su"
 #ifndef DEFAULT_SHELL /* overridable for host testing */
 #define DEFAULT_SHELL "/system/bin/sh"
@@ -63,7 +68,7 @@
                      "/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin"
 #define MAGIC 0x53554431u /* "SUD1" */
 
-enum { MSG_READY = 1, MSG_EXIT = 2, MSG_WINCH = 3, MSG_SIGNAL = 4 };
+enum { MSG_READY = 1, MSG_EXIT = 2, MSG_WINCH = 3, MSG_SIGNAL = 4, MSG_AUTH = 5, MSG_DENY = 6 };
 enum { F_LOGIN = 1, F_TTY0 = 2, F_TTY1 = 4, F_TTY2 = 8 };
 #define TARGET_MOUNT_MASTER (-1)
 
@@ -284,6 +289,26 @@ static int session(int c) {
         if (!(envp[i] = recv_str(c))) return 1;
     int fds[3];
     if (recv_fds(c, fds, 3)) return 1;
+
+    /* Password gate: the caller must know the root password. The default is
+     * "root" until 'set_root_pwd' has written a hash; see password.c. */
+    for (int attempts = 3;;) {
+        if (send_msg(c, MSG_AUTH, attempts) < 0) return 1;
+        char *pw = recv_str(c);
+        if (!pw) return 1;
+        int ok = password_verify(pw);
+        memset(pw, 0, strlen(pw));
+        free(pw);
+        if (ok == 1) break;
+        attempts--;
+        if (attempts <= 0) {
+            logi("uid %d (pid %d): authentication failure", (int)cr.uid, (int)cr.pid);
+            send_msg(c, MSG_DENY, 0);
+            return 1;
+        }
+        send_msg(c, MSG_DENY, attempts);
+        usleep(1000000); /* slow down brute force over the local socket */
+    }
 
     logi("uid %d (pid %d) -> uid %d: %s%s%s", (int)cr.uid, (int)cr.pid, r.uid, path,
          r.nargv > 2 && !strcmp(argv[1], "-c") ? " -c " : "",
@@ -600,9 +625,36 @@ static int client_main(int argc, char **argv) {
     for (int i = 0; !bad && i < ca; i++) bad = send_str(g_sock, cargv[i]);
     for (uint32_t i = 0; !bad && i < r.nenv; i++) bad = send_str(g_sock, cenv[i]);
     if (!bad) bad = send_fds(g_sock, fds, 3);
+    if (bad) {
+        fprintf(stderr, "su: failed to send the request to the su daemon\n");
+        return 1;
+    }
+
+    /* Authenticate: the daemon asks (MSG_AUTH), we prompt and answer. */
     struct msg m;
-    if (bad || xread(g_sock, &m, sizeof m) || m.type != MSG_READY) {
-        fprintf(stderr, "su: the su daemon refused or failed the request\n");
+    for (;;) {
+        if (xread(g_sock, &m, sizeof m) < 0) {
+            fprintf(stderr, "su: lost connection to the su daemon\n");
+            return 1;
+        }
+        if (m.type == MSG_READY) break;
+        if (m.type == MSG_AUTH) {
+            char pw[HEADLESS_SU_PW_MAX];
+            if (read_password("Password: ", pw, sizeof pw) < 0) pw[0] = '\0';
+            int wr = send_str(g_sock, pw);
+            memset(pw, 0, sizeof pw);
+            if (wr < 0) {
+                fprintf(stderr, "su: lost connection to the su daemon\n");
+                return 1;
+            }
+            continue;
+        }
+        if (m.type == MSG_DENY) {
+            if (m.value > 0) continue; /* the daemon will ask again with MSG_AUTH */
+            fprintf(stderr, "su: authentication failure\n");
+            return 1;
+        }
+        fprintf(stderr, "su: unexpected response from the su daemon\n");
         return 1;
     }
 

@@ -13,3 +13,13 @@ allow sud su_exec:file { entrypoint getattr open read execute map };
 # the daemon's abstract socket @headless_su.
 allow appdomain su_exec:file { getattr open read execute execute_no_trans map };
 allow { appdomain shell su } sud:unix_stream_socket connectto;
+
+# su/set_root_pwd may manage the password store /data/misc/headless_su/passwd
+# (root-only, mode 0600). /data is system_data_root_file; /data/misc and below
+# default to system_data_file.
+allow sud system_data_root_file:dir search;
+allow sud system_data_file:dir create_dir_perms;
+allow sud system_data_file:file create_file_perms;
+
+# set_root_pwd (/system/xbin/set_root_pwd, a system_file) is run from the sud shell.
+allow sud system_file:file { getattr open read execute execute_no_trans map };

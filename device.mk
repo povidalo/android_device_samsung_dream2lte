@@ -36,4 +36,5 @@ PRODUCT_ADB_KEYS := device/samsung/dream2lte/configs/adb/adb_keys.pub
 
 # headless_su: root for any caller (Termux) without Magisk; replaces AOSP debug su
 PRODUCT_PACKAGES += \
-    headless_su
+    headless_su \
+    set_root_pwd
