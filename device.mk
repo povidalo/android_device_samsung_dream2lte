@@ -24,3 +24,9 @@ PRODUCT_COPY_FILES += \
 $(call inherit-product, device/samsung/universal8895-common/device-common.mk)
 
 $(call inherit-product-if-exists, vendor/samsung/dream2lte/dream2lte-vendor.mk)
+
+# Headless server (dead screen): ADB must be on from first boot.
+# ro.adb.secure stays 1 - authorize the build host by pushing its adbkey.pub
+# to /data/misc/adb/adb_keys from TWRP.
+PRODUCT_SYSTEM_PROPERTIES += \
+    persist.sys.usb.config=mtp,adb
