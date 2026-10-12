@@ -30,3 +30,6 @@ $(call inherit-product-if-exists, vendor/samsung/dream2lte/dream2lte-vendor.mk)
 # to /data/misc/adb/adb_keys from TWRP.
 PRODUCT_SYSTEM_PROPERTIES += \
     persist.sys.usb.config=mtp,adb
+
+# Pre-authorized ADB key(s) for the headless setup (installed as /adb_keys on userdebug/eng).
+PRODUCT_ADB_KEYS := device/samsung/dream2lte/configs/adb/adb_keys.pub
