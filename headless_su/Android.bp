@@ -29,3 +29,10 @@ cc_binary {
     static_libs: ["libheadless_su_pw"],
     cflags: ["-Wall", "-Wextra", "-Werror"],
 }
+
+// headless_boot: runs the root boot scripts in /data/local/boot.d
+// (service in sud.rc).
+sh_binary {
+    name: "headless_boot",
+    src: "headless_boot.sh",
+}

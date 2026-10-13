@@ -26,5 +26,6 @@ allow sud system_data_root_file:dir search;
 allow sud system_data_file:dir create_dir_perms;
 allow sud system_data_file:file create_file_perms;
 
-# set_root_pwd (/system/xbin/set_root_pwd, a system_file) is run from the sud shell.
-allow sud system_file:file { getattr open read execute execute_no_trans map };
+# set_root_pwd (/system/xbin/set_root_pwd) is run from the sud shell, and init
+# starts headless_boot (/system/bin/headless_boot) in sud; both are system_file.
+allow sud system_file:file { entrypoint getattr open read execute execute_no_trans map };

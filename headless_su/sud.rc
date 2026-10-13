@@ -6,3 +6,16 @@ service sud /system/xbin/su --daemon
     group root
     seclabel u:r:sud:s0
 
+# Root boot scripts in /data/local/boot.d, run once boot has completed (see
+# headless_boot). Not oneshot: the runner stays alive so that init does not
+# kill the daemons the scripts start. oom_score_adj 0 (inherited by those
+# daemons) instead of init's -1000, so the kernel may OOM-kill a runaway one.
+service headless_boot /system/bin/headless_boot
+    user root
+    group root
+    seclabel u:r:sud:s0
+    oom_score_adjust 0
+    disabled
+
+on property:sys.boot_completed=1
+    start headless_boot
