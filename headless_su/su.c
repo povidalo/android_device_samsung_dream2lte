@@ -6,7 +6,10 @@
  * permission management (no prompts, no allowlist, no manager app); the
  * password is the single gate. It defaults to "root" until 'set_root_pwd'
  * writes a salted SHA-256 hash to /data/misc/headless_su/passwd, after which
- * the default no longer works (see password.c).
+ * the default no longer works (see password.c). Password checks are
+ * serialized device-wide with a 1 s delay after each failure, a client that
+ * does not answer within AUTH_TIMEOUT is dropped, and at most MAX_SESSIONS
+ * sessions run at once.
  *
  *   su --daemon                               run the daemon (init: sud.rc)
  *   su [options] [-] [user [args...]]         client
@@ -50,6 +53,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef __ANDROID__
@@ -58,8 +62,8 @@
 
 #include "password.h"
 
-#define VERSION_NAME "headless_su 1.1 (password protected)"
-#define VERSION_CODE 2
+#define VERSION_NAME "headless_su 1.2 (password protected)"
+#define VERSION_CODE 3
 #define SOCKET_NAME "headless_su"
 #ifndef DEFAULT_SHELL /* overridable for host testing */
 #define DEFAULT_SHELL "/system/bin/sh"
@@ -67,6 +71,12 @@
 #define DEFAULT_PATH "/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:" \
                      "/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin"
 #define MAGIC 0x53554431u /* "SUD1" */
+#ifndef AUTH_TIMEOUT /* overridable for host testing */
+#define AUTH_TIMEOUT 60   /* seconds for the request and for each password answer */
+#endif
+#ifndef MAX_SESSIONS
+#define MAX_SESSIONS 128  /* concurrent sessions, running root shells included */
+#endif
 
 enum { MSG_READY = 1, MSG_EXIT = 2, MSG_WINCH = 3, MSG_SIGNAL = 4, MSG_AUTH = 5, MSG_DENY = 6 };
 enum { F_LOGIN = 1, F_TTY0 = 2, F_TTY1 = 4, F_TTY2 = 8 };
@@ -270,6 +280,7 @@ static void exec_child(const struct req *r, pid_t ns_pid, const int *fds, int sl
 }
 
 static int session(int c) {
+    alarm(AUTH_TIMEOUT); /* SIGALRM ends a session that stalls before authenticating */
     struct ucred cr;
     socklen_t crl = sizeof cr;
     if (getsockopt(c, SOL_SOCKET, SO_PEERCRED, &cr, &crl) < 0) return 1;
@@ -293,22 +304,30 @@ static int session(int c) {
     /* Password gate: the caller must know the root password. The default is
      * "root" until 'set_root_pwd' has written a hash; see password.c. */
     for (int attempts = 3;;) {
+        alarm(AUTH_TIMEOUT);
         if (send_msg(c, MSG_AUTH, attempts) < 0) return 1;
         char *pw = recv_str(c);
         if (!pw) return 1;
+        /* One check at a time device-wide, failure delay included, so that
+         * parallel connections cannot multiply the guessing rate. */
+        int lk = password_lock();
+        if (lk < 0) logi("cannot lock %s: %s", HEADLESS_SU_PW_LOCK, strerror(errno));
         int ok = password_verify(pw);
-        memset(pw, 0, strlen(pw));
+        password_wipe(pw, strlen(pw));
         free(pw);
-        if (ok == 1) break;
-        attempts--;
-        if (attempts <= 0) {
-            logi("uid %d (pid %d): authentication failure", (int)cr.uid, (int)cr.pid);
-            send_msg(c, MSG_DENY, 0);
-            return 1;
+        if (ok == 1) {
+            if (lk >= 0) close(lk);
+            break;
         }
+        attempts--;
+        if (attempts <= 0)
+            logi("uid %d (pid %d): authentication failure", (int)cr.uid, (int)cr.pid);
         send_msg(c, MSG_DENY, attempts);
         usleep(1000000); /* slow down brute force over the local socket */
+        if (lk >= 0) close(lk);
+        if (attempts <= 0) return 1;
     }
+    alarm(0);
 
     logi("uid %d (pid %d) -> uid %d: %s%s%s", (int)cr.uid, (int)cr.pid, r.uid, path,
          r.nargv > 2 && !strcmp(argv[1], "-c") ? " -c " : "",
@@ -401,13 +420,30 @@ static int session(int c) {
     return 0;
 }
 
+static volatile sig_atomic_t g_sessions; /* live session processes */
+
+static void on_sigchld(int sig) {
+    (void)sig;
+    int saved = errno;
+    while (waitpid(-1, NULL, WNOHANG) > 0) g_sessions--;
+    errno = saved;
+}
+
 static int daemon_main(void) {
     if (getuid() != 0) {
         fprintf(stderr, "su: --daemon must run as root\n");
         return 1;
     }
     signal(SIGPIPE, SIG_IGN);
-    signal(SIGCHLD, SIG_IGN); /* session handlers are reaped automatically */
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = on_sigchld; /* reaps session handlers and counts them */
+    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    sigaction(SIGCHLD, &sa, NULL);
+    sigset_t chld, prev;
+    sigemptyset(&chld);
+    sigaddset(&chld, SIGCHLD);
+    time_t last_full_log = 0;
     int s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     struct sockaddr_un a;
     socklen_t alen = make_addr(&a);
@@ -422,12 +458,25 @@ static int daemon_main(void) {
             if (errno != EINTR) usleep(100000);
             continue;
         }
+        sigprocmask(SIG_BLOCK, &chld, &prev); /* g_sessions is also changed by on_sigchld */
+        if (g_sessions >= MAX_SESSIONS) {
+            sigprocmask(SIG_SETMASK, &prev, NULL);
+            if (time(NULL) != last_full_log) { /* at most one log line per second */
+                last_full_log = time(NULL);
+                logi("daemon: %d sessions active, refusing connections", MAX_SESSIONS);
+            }
+            close(c);
+            continue;
+        }
         pid_t p = fork();
         if (p == 0) {
             close(s);
             signal(SIGCHLD, SIG_DFL);
+            sigprocmask(SIG_SETMASK, &prev, NULL);
             _exit(session(c));
         }
+        if (p > 0) g_sessions++;
+        sigprocmask(SIG_SETMASK, &prev, NULL);
         close(c);
     }
 }
@@ -598,6 +647,14 @@ static int client_main(int argc, char **argv) {
                 a.sun_path + 1, strerror(errno));
         return 1;
     }
+    /* Only talk to a root daemon: while sud is not running, any process could
+     * bind the abstract name and collect the password. */
+    struct ucred dc;
+    socklen_t dcl = sizeof dc;
+    if (getsockopt(g_sock, SOL_SOCKET, SO_PEERCRED, &dc, &dcl) < 0 || dc.uid != 0) {
+        fprintf(stderr, "su: @%s is not served by root, refusing\n", a.sun_path + 1);
+        return 1;
+    }
 
     for (int i = 0; i < 3; i++) /* make sure 0..2 exist so they can be passed */
         if (fcntl(i, F_GETFD) < 0) open("/dev/null", O_RDWR);
@@ -640,9 +697,12 @@ static int client_main(int argc, char **argv) {
         if (m.type == MSG_READY) break;
         if (m.type == MSG_AUTH) {
             char pw[HEADLESS_SU_PW_MAX];
-            if (read_password("Password: ", pw, sizeof pw) < 0) pw[0] = '\0';
+            if (read_password("Password: ", pw, sizeof pw) < 0) {
+                fprintf(stderr, "su: no password given\n"); /* EOF: no tty, empty stdin */
+                return 1;
+            }
             int wr = send_str(g_sock, pw);
-            memset(pw, 0, sizeof pw);
+            password_wipe(pw, sizeof pw);
             if (wr < 0) {
                 fprintf(stderr, "su: lost connection to the su daemon\n");
                 return 1;
@@ -650,7 +710,10 @@ static int client_main(int argc, char **argv) {
             continue;
         }
         if (m.type == MSG_DENY) {
-            if (m.value > 0) continue; /* the daemon will ask again with MSG_AUTH */
+            if (m.value > 0) { /* the daemon will ask again with MSG_AUTH */
+                fprintf(stderr, "su: incorrect password\n");
+                continue;
+            }
             fprintf(stderr, "su: authentication failure\n");
             return 1;
         }

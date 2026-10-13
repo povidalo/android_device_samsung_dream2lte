@@ -6,7 +6,7 @@
  * (mode 0600); 'su' then requires that password instead of the default "root".
  *
  *   set_root_pwd              prompt for a new password (twice, no echo)
- *   echo NEWPASS | set_root_pwd   read the password from stdin (no echo issue)
+ *   echo NEWPASS | set_root_pwd   read one line from stdin when it is not a terminal
  *   set_root_pwd --clear      delete the hash; the default "root" applies again
  *
  * A password is never taken from argv, so it cannot leak through ps.
@@ -22,12 +22,8 @@ static void usage(FILE *f) {
     fprintf(f,
             "Usage: set_root_pwd [--clear]\n"
             "  (no args)   prompt for a new root password for headless_su\n"
+            "              (or read one line from stdin if it is not a terminal)\n"
             "  --clear     remove the password; the default \"root\" works again\n");
-}
-
-static void wipe(char *s) {
-    volatile char *v = s;
-    while (*v) *v++ = 0;
 }
 
 int main(int argc, char **argv) {
@@ -52,8 +48,13 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    char a[HEADLESS_SU_PW_MAX], b[HEADLESS_SU_PW_MAX];
-    if (read_password("New password: ", a, sizeof a) < 0) {
+    char a[HEADLESS_SU_PW_MAX] = "", b[HEADLESS_SU_PW_MAX] = "";
+    /* Piped stdin wins over the terminal, so 'echo pw | su -c set_root_pwd'
+     * works even though the su session has a controlling tty. */
+    int interactive = isatty(STDIN_FILENO);
+    int rc = interactive ? read_password("New password: ", a, sizeof a)
+                         : password_read_line(STDIN_FILENO, a, sizeof a);
+    if (rc < 0) {
         fprintf(stderr, "set_root_pwd: cannot read a password\n");
         return 1;
     }
@@ -61,23 +62,23 @@ int main(int argc, char **argv) {
         fprintf(stderr, "set_root_pwd: empty password, refusing\n");
         return 1;
     }
-    if (password_on_tty()) {
+    if (interactive) {
         if (read_password("Retype new password: ", b, sizeof b) < 0) {
             fprintf(stderr, "set_root_pwd: cannot read a password\n");
-            wipe(a);
+            password_wipe(a, sizeof a);
             return 1;
         }
         if (strcmp(a, b) != 0) {
             fprintf(stderr, "set_root_pwd: passwords do not match\n");
-            wipe(a);
-            wipe(b);
+            password_wipe(a, sizeof a);
+            password_wipe(b, sizeof b);
             return 1;
         }
     }
 
-    int rc = password_set(a);
-    wipe(a);
-    wipe(b);
+    rc = password_set(a);
+    password_wipe(a, sizeof a);
+    password_wipe(b, sizeof b);
     if (rc < 0) {
         fprintf(stderr, "set_root_pwd: cannot store the password: %s\n", strerror(errno));
         return 1;

@@ -1,6 +1,11 @@
-# headless_su root daemon. Headless single-user server: any caller gets root
-# by design (no permission management). The daemon and the root shells it
-# spawns run in the permissive 'sud' domain; everything else stays enforcing.
+# headless_su root daemon. Headless single-user server: any caller that knows
+# the root password gets root (no per-app permission management). The daemon
+# and the root shells it spawns run in the permissive 'sud' domain; everything
+# else stays enforcing.
+#
+# Note: the su_exec rules below deliberately break AOSP's neverallow in
+# public/domain.te (only shell/su/dumpstate may execute su_exec). The build
+# accepts them because universal8895-common sets SELINUX_IGNORE_NEVERALLOWS.
 type sud, domain, coredomain, mlstrustedsubject, mlstrustedobject;
 permissive sud;
 
@@ -14,9 +19,9 @@ allow sud su_exec:file { entrypoint getattr open read execute map };
 allow appdomain su_exec:file { getattr open read execute execute_no_trans map };
 allow { appdomain shell su } sud:unix_stream_socket connectto;
 
-# su/set_root_pwd may manage the password store /data/misc/headless_su/passwd
-# (root-only, mode 0600). /data is system_data_root_file; /data/misc and below
-# default to system_data_file.
+# su/set_root_pwd may manage the password store /data/misc/headless_su/
+# (passwd + lock, root-only, mode 0600). /data is system_data_root_file;
+# /data/misc and below default to system_data_file.
 allow sud system_data_root_file:dir search;
 allow sud system_data_file:dir create_dir_perms;
 allow sud system_data_file:file create_file_perms;

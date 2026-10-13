@@ -8,7 +8,10 @@
  *   password_verify()   1 = accepted, 0 = rejected, -1 = store unreadable/corrupt
  *   password_set()      write a new salted hash (0 = ok)
  *   password_clear()    remove the hash, restoring the default (0 = ok)
+ *   password_lock()     device-wide lock serializing verification (fd, or -1)
  *   read_password()     prompt on the terminal with echo off (falls back to stdin)
+ *   password_read_line() read one line from fd, without the newline
+ *   password_wipe()     zero memory (not optimized away)
  */
 #ifndef HEADLESS_SU_PASSWORD_H
 #define HEADLESS_SU_PASSWORD_H
@@ -19,14 +22,17 @@
 #define HEADLESS_SU_PW_DIR "/data/misc/headless_su"
 #endif
 #define HEADLESS_SU_PW_PATH HEADLESS_SU_PW_DIR "/passwd"
+#define HEADLESS_SU_PW_LOCK HEADLESS_SU_PW_DIR "/lock"
 #define HEADLESS_SU_PW_DEFAULT "root"
 #define HEADLESS_SU_PW_MAX 256
 
 int password_verify(const char *pw);
 int password_set(const char *pw);
 int password_clear(void);
+int password_lock(void);
 int read_password(const char *prompt, char *buf, size_t size);
-int password_on_tty(void);
+int password_read_line(int fd, char *buf, size_t size);
+void password_wipe(void *p, size_t n);
 
 void password_sha256(const void *data, size_t len, unsigned char out[32]);
 

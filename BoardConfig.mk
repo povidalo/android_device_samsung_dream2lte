@@ -27,5 +27,7 @@ TARGET_KERNEL_CONFIG := exynos8895-dream2lte_defconfig
 # inherit from the proprietary version
 -include vendor/samsung/dream2lte/BoardConfigVendor.mk
 
-# headless_su (root daemon + su, no permission management)
+# headless_su (password-gated root daemon + su)
 SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += device/samsung/dream2lte/headless_su/sepolicy
+# /system/xbin and su reachable by Termux, su not setuid (see config.fs)
+TARGET_FS_CONFIG_GEN += device/samsung/dream2lte/config.fs

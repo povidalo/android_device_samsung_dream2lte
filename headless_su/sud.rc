@@ -1,6 +1,8 @@
-# Root daemon for headless_su (/system/xbin/su). Grants root to any caller.
+# Root daemon for headless_su (/system/xbin/su). Grants root to callers that
+# know the root password (default "root" until set_root_pwd sets one).
 service sud /system/xbin/su --daemon
     class main
     user root
     group root
     seclabel u:r:sud:s0
+

@@ -8,10 +8,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <termios.h>
@@ -144,7 +146,7 @@ static void sha256_salted(const unsigned char *salt, size_t saltlen, const char 
 
 /* ------------------------------------------------------------- helpers */
 
-static void secure_wipe(void *p, size_t n) {
+void password_wipe(void *p, size_t n) {
     volatile unsigned char *v = p;
     while (n--) *v++ = 0;
 }
@@ -217,14 +219,23 @@ static int write_all(int fd, const void *buf, size_t n) {
     return 0;
 }
 
+/* Make a rename/unlink in the store directory durable across power loss. */
+static void sync_dir(void) {
+    int fd = open(HEADLESS_SU_PW_DIR, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return;
+    fsync(fd);
+    close(fd);
+}
+
 /* --------------------------------------------------------------- store */
 
 int password_verify(const char *pw) {
     if (!pw) return 0;
     FILE *f = fopen(HEADLESS_SU_PW_PATH, "re");
     if (!f) {
-        if (errno == ENOENT)
-            return cteq(pw, HEADLESS_SU_PW_DEFAULT, sizeof HEADLESS_SU_PW_DEFAULT) ? 1 : 0;
+        if (errno == ENOENT) /* length first: pw may be shorter than the default */
+            return strlen(pw) == sizeof HEADLESS_SU_PW_DEFAULT - 1 &&
+                   cteq(pw, HEADLESS_SU_PW_DEFAULT, sizeof HEADLESS_SU_PW_DEFAULT - 1);
         return -1;
     }
     char line[512];
@@ -295,20 +306,39 @@ int password_set(const char *pw) {
         return -1;
     }
     chmod(HEADLESS_SU_PW_PATH, 0600);
-    secure_wipe(salt, sizeof salt);
-    secure_wipe(hash, sizeof hash);
-    secure_wipe(line, sizeof line);
+    sync_dir();
+    password_wipe(salt, sizeof salt);
+    password_wipe(hash, sizeof hash);
+    password_wipe(line, sizeof line);
     return 0;
 }
 
 int password_clear(void) {
-    if (unlink(HEADLESS_SU_PW_PATH) < 0 && errno != ENOENT) return -1;
+    if (unlink(HEADLESS_SU_PW_PATH) < 0) return errno == ENOENT ? 0 : -1;
+    sync_dir();
     return 0;
+}
+
+/* Exclusive flock on the store's lock file, released when the returned fd is
+ * closed or the process dies. Every su session takes it around a password
+ * check (and the failure delay), so guesses are serialized device-wide
+ * instead of per connection. */
+int password_lock(void) {
+    mkdir(HEADLESS_SU_PW_DIR, 0700);
+    int fd = open(HEADLESS_SU_PW_LOCK, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) return -1;
+    while (flock(fd, LOCK_EX) < 0) {
+        if (errno != EINTR) {
+            close(fd);
+            return -1;
+        }
+    }
+    return fd;
 }
 
 /* ------------------------------------------------------------- prompt */
 
-static int read_line_fd(int fd, char *buf, size_t size) {
+int password_read_line(int fd, char *buf, size_t size) {
     size_t i = 0;
     for (;;) {
         char ch;
@@ -328,6 +358,21 @@ static int read_line_fd(int fd, char *buf, size_t size) {
     return 0;
 }
 
+/* Terminal state while echo is off, so that a signal at the prompt (Ctrl-C,
+ * kill) does not leave the user's terminal without echo. */
+static int g_echo_fd = -1;
+static struct termios g_echo_saved;
+static const int g_echo_sigs[] = {SIGINT, SIGQUIT, SIGTERM, SIGHUP};
+#define N_ECHO_SIGS (sizeof g_echo_sigs / sizeof *g_echo_sigs)
+
+static void restore_echo_and_die(int sig) {
+    tcsetattr(g_echo_fd, TCSAFLUSH, &g_echo_saved);
+    ssize_t w = write(g_echo_fd, "\n", 1);
+    (void)w;
+    signal(sig, SIG_DFL);
+    raise(sig); /* delivered with the default action once the handler returns */
+}
+
 int read_password(const char *prompt, char *buf, size_t size) {
     if (size) buf[0] = '\0';
     int fd = open("/dev/tty", O_RDWR | O_CLOEXEC);
@@ -336,27 +381,30 @@ int read_password(const char *prompt, char *buf, size_t size) {
 
     int tty = isatty(fd);
     struct termios saved;
+    struct sigaction old[N_ECHO_SIGS];
     int have_saved = tty && tcgetattr(fd, &saved) == 0;
     if (have_saved) {
+        g_echo_fd = fd;
+        g_echo_saved = saved;
+        struct sigaction sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sa_handler = restore_echo_and_die;
+        for (size_t i = 0; i < N_ECHO_SIGS; i++) {
+            sigaction(g_echo_sigs[i], NULL, &old[i]);
+            if (old[i].sa_handler != SIG_IGN) sigaction(g_echo_sigs[i], &sa, NULL);
+        }
         struct termios raw = saved;
         raw.c_lflag &= ~(tcflag_t)ECHO;
         tcsetattr(fd, TCSAFLUSH, &raw);
         if (prompt) write_all(fd, prompt, strlen(prompt));
     }
-    int r = read_line_fd(fd, buf, size);
+    int r = password_read_line(fd, buf, size);
     if (have_saved) {
         tcsetattr(fd, TCSAFLUSH, &saved);
         write_all(fd, "\n", 1);
+        for (size_t i = 0; i < N_ECHO_SIGS; i++) sigaction(g_echo_sigs[i], &old[i], NULL);
+        g_echo_fd = -1;
     }
     if (close_fd) close(fd);
     return r;
-}
-
-/* 1 if a controlling terminal can be opened, else 0. */
-int password_on_tty(void) {
-    int fd = open("/dev/tty", O_RDWR | O_CLOEXEC);
-    if (fd < 0) return 0;
-    int tty = isatty(fd);
-    close(fd);
-    return tty;
 }

@@ -34,7 +34,7 @@ PRODUCT_SYSTEM_PROPERTIES += \
 # Pre-authorized ADB key(s) for the headless setup (installed as /adb_keys on userdebug/eng).
 PRODUCT_ADB_KEYS := device/samsung/dream2lte/configs/adb/adb_keys.pub
 
-# headless_su: root for any caller (Termux) without Magisk; replaces AOSP debug su
+# headless_su: password-gated root (Termux) without Magisk; replaces AOSP debug su
 PRODUCT_PACKAGES += \
     headless_su \
     set_root_pwd
