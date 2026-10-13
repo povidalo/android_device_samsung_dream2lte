@@ -3,20 +3,18 @@
 # and the root shells it spawns run in the permissive 'sud' domain; everything
 # else stays enforcing.
 #
-# Note: the su_exec rules below deliberately break AOSP's neverallow in
-# public/domain.te (only shell/su/dumpstate may execute su_exec). The build
-# accepts them because universal8895-common sets SELINUX_IGNORE_NEVERALLOWS.
+# /system/bin/su is a plain system_file (not su_exec, which only labels
+# /system/xbin/su), so apps and adb shell may already run the client and stay
+# in their own domains.
 type sud, domain, coredomain, mlstrustedsubject, mlstrustedobject;
 permissive sud;
 
-# init starts /system/xbin/su (su_exec) with 'seclabel u:r:sud:s0'.
-allow init su_exec:file { getattr open read execute map };
+# init starts /system/bin/su --daemon and /system/bin/headless_boot with
+# 'seclabel u:r:sud:s0' (entrypoint: see system_file below).
 allow init sud:process { transition rlimitinh siginh noatsecure };
-allow sud su_exec:file { entrypoint getattr open read execute map };
 
-# Clients: any app (Termux), adb shell and su may run the client and reach
-# the daemon's abstract socket @headless_su.
-allow appdomain su_exec:file { getattr open read execute execute_no_trans map };
+# Clients: any app (Termux), adb shell and su may reach the daemon's abstract
+# socket @headless_su.
 allow { appdomain shell su } sud:unix_stream_socket connectto;
 
 # su/set_root_pwd may manage the password store /data/misc/headless_su/
@@ -26,6 +24,6 @@ allow sud system_data_root_file:dir search;
 allow sud system_data_file:dir create_dir_perms;
 allow sud system_data_file:file create_file_perms;
 
-# set_root_pwd (/system/xbin/set_root_pwd) is run from the sud shell, and init
-# starts headless_boot (/system/bin/headless_boot) in sud; both are system_file.
+# su and headless_boot are entered from init; set_root_pwd and the rest of
+# /system run from the sud shell. All are system_file.
 allow sud system_file:file { entrypoint getattr open read execute execute_no_trans map };

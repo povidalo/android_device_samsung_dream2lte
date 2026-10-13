@@ -1,6 +1,10 @@
 // headless_su: root daemon + su client for this headless single-user server.
 // Root is gated by a password (default "root" until 'set_root_pwd' sets one).
-// Replaces AOSP's debug su at /system/xbin/su (label su_exec).
+// Installed as /system/bin/su, not /system/xbin/su: AOSP's debug su module
+// (system/extras/su) always defines an install rule for /system/xbin/su, and
+// Make keeps the last rule for a path, so a second module installing there gets
+// AOSP's binary copied instead ("overriding commands for target"). 'overrides'
+// still keeps AOSP's setuid su out of the product (e.g. with WITH_SU=true).
 
 // Shared password store (salted SHA-256): used by su and set_root_pwd.
 cc_library_static {
@@ -13,7 +17,6 @@ cc_binary {
     name: "headless_su",
     stem: "su",
     srcs: ["su.c"],
-    install_in_xbin: true,
     overrides: ["su"],
     static_libs: ["libheadless_su_pw"],
     shared_libs: ["liblog"],
@@ -25,7 +28,6 @@ cc_binary {
 cc_binary {
     name: "set_root_pwd",
     srcs: ["set_root_pwd.c"],
-    install_in_xbin: true,
     static_libs: ["libheadless_su_pw"],
     cflags: ["-Wall", "-Wextra", "-Werror"],
 }
