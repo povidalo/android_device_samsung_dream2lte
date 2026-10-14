@@ -40,3 +40,16 @@ PRODUCT_PACKAGES += \
     headless_su \
     set_root_pwd \
     headless_boot
+
+# ROM boot scripts run by headless_boot before /data/local/boot.d: Termux SSH
+# (sshd on 8022) and USB snapshots after each boot (/data/local/usb-boot.log).
+PRODUCT_PACKAGES += \
+    headless_boot_20-termux \
+    headless_boot_30-usb-report \
+    headless_termux_sshd
+
+# SSH public keys for Termux's sshd: not in git, copied in by the Mac build
+# script before every build (the build host's key); installed only if present.
+PRODUCT_COPY_FILES += \
+    $(foreach f,$(wildcard device/samsung/dream2lte/headless_apps/termux_authorized_keys),\
+        $(f):$(TARGET_COPY_OUT_SYSTEM)/etc/headless/termux_authorized_keys)

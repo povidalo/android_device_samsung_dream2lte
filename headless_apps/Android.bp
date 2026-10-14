@@ -1,0 +1,29 @@
+// Headless server: the ROM's own boot scripts, run by headless_boot (see
+// headless_su/headless_boot.sh) from /system/etc/headless/boot.d before the
+// user's /data/local/boot.d, plus the files they use.
+
+prebuilt_etc {
+    name: "headless_boot_20-termux",
+    src: "boot.d/20-termux",
+    sub_dir: "headless/boot.d",
+    filename: "20-termux",
+}
+
+prebuilt_etc {
+    name: "headless_boot_30-usb-report",
+    src: "boot.d/30-usb-report",
+    sub_dir: "headless/boot.d",
+    filename: "30-usb-report",
+}
+
+// sshd supervisor started by 20-termux.
+prebuilt_etc {
+    name: "headless_termux_sshd",
+    src: "termux-sshd.sh",
+    sub_dir: "headless",
+    filename: "termux-sshd.sh",
+}
+
+// The SSH public keys allowed to log in (termux_authorized_keys) are not in git:
+// the Mac build script copies the build host's key in before every build, and
+// device.mk installs the file only if it exists.

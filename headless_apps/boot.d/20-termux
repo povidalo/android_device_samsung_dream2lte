@@ -1,0 +1,50 @@
+#!/system/bin/sh
+# Headless ROM boot script (after 10-apps): make Termux reachable over SSH.
+# First boot: unpack Termux's base system (Termux only does that from its
+# visible UI, so start it once) and add the ROM's authorized SSH keys. Then,
+# in the background: install openssh as soon as the network allows, and keep
+# sshd (port 8022, Termux user, key login) running. Log: /data/local/termux-setup.log
+
+T=/data/data/com.termux
+P=$T/files/usr
+H=$T/files/home
+
+if ! pm path com.termux >/dev/null 2>&1; then
+    echo "20-termux: Termux is not installed"
+    exit 0
+fi
+
+if [ ! -x "$P/bin/bash" ]; then
+    echo "20-termux: unpacking Termux's base system (starting its UI once)"
+    input keyevent KEYCODE_WAKEUP
+    wm dismiss-keyguard 2>/dev/null
+    am start -n com.termux/.app.TermuxActivity >/dev/null
+    # The installer unpacks into usr-staging and renames it to usr when done.
+    i=0
+    while [ ! -x "$P/bin/bash" ] && [ $i -lt 240 ]; do sleep 2; i=$((i + 2)); done
+    if [ ! -x "$P/bin/bash" ]; then
+        echo "20-termux: Termux's base system did not appear within 240 s"
+        exit 1
+    fi
+    echo "20-termux: base system unpacked after ${i}s"
+    input keyevent KEYCODE_HOME
+fi
+
+# Authorized keys from the ROM (the build host's key, if the build had one),
+# merged into ~/.ssh/authorized_keys.
+TU=$(stat -c %u "$T")
+mkdir -p "$H/.ssh"
+touch "$H/.ssh/authorized_keys"
+KEYS=/system/etc/headless/termux_authorized_keys
+if [ -f "$KEYS" ]; then
+    while read -r key; do
+        [ -n "$key" ] && ! grep -qxF "$key" "$H/.ssh/authorized_keys" && echo "$key" >>"$H/.ssh/authorized_keys"
+    done <"$KEYS"
+fi
+chown -R "$TU:$TU" "$H/.ssh"
+chmod 700 "$H/.ssh"
+chmod 600 "$H/.ssh/authorized_keys"
+restorecon -R "$H/.ssh" 2>/dev/null
+
+setsid sh /system/etc/headless/termux-sshd.sh "$TU" </dev/null >/dev/null 2>&1 &
+echo "20-termux: sshd supervisor started (log /data/local/termux-setup.log)"

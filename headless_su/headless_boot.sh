@@ -1,7 +1,13 @@
 #!/system/bin/sh
-# headless_boot - run the root boot scripts in /data/local/boot.d once per boot
-# (started by init on sys.boot_completed=1, see sud.rc).
+# headless_boot - run the root boot scripts once per boot (started by init on
+# sys.boot_completed=1, see sud.rc): first the ROM's own scripts, then the
+# user's.
 #
+#   /system/etc/headless/boot.d/  ROM scripts (Termux SSH, USB snapshots), all
+#                            files, in name order, with /system/bin/sh. They
+#                            run before Termux is looked for, so the user
+#                            scripts already see a Termux that 20-termux has
+#                            just unpacked on first boot.
 #   /data/local/boot.d/      root-only (0700, created on first boot). Every
 #                            executable file runs, in name order, one at a time;
 #                            'chmod -x' disables a script. A script must return:
@@ -23,20 +29,39 @@
 # anyway, init restarts it and the scripts run again, so keep them idempotent
 # (e.g. check 'mountpoint -q' before mounting).
 
-DIR=${HEADLESS_BOOT_DIR:-/data/local/boot.d}      # overridable for host testing
+ROMDIR=${HEADLESS_BOOT_ROMDIR:-/system/etc/headless/boot.d} # overridable for host testing
+DIR=${HEADLESS_BOOT_DIR:-/data/local/boot.d}
 LOG=${HEADLESS_BOOT_LOG:-/data/local/boot.d.log}
 TERMUX=${HEADLESS_BOOT_TERMUX:-/data/data/com.termux/files}
 SCRIPT_TIMEOUT=${HEADLESS_BOOT_TIMEOUT:-300}
+ROM_TIMEOUT=600 # first boot: unpacking Termux and installing apps takes a while
 
 say() {
     echo "$(date '+%F %T') headless_boot: $*" >>"$LOG"
     [ -x /system/bin/log ] && /system/bin/log -t headless_boot "$*"
 }
 
+result() { # $1 script name, $2 exit status, $3 timeout
+    if [ "$2" -eq 124 ] || [ "$2" -eq 137 ]; then
+        say "$1: killed after $3s"
+    else
+        say "$1: exit $2"
+    fi
+}
+
 umask 077 # the directory, the log and ~/.suroot are root-only
 mkdir -p "$DIR" && chmod 0700 "$DIR"
 [ -f "$LOG" ] && mv -f "$LOG" "$LOG.old"
 : >"$LOG"
+
+umask 022
+for f in "$ROMDIR"/*; do
+    [ -f "$f" ] || continue
+    say "running rom/${f##*/}"
+    timeout -k 10 "$ROM_TIMEOUT" sh "$f" </dev/null >>"$LOG" 2>&1
+    result "rom/${f##*/}" $? "$ROM_TIMEOUT"
+done
+umask 077
 
 P= PRELOAD=
 if [ -x "$TERMUX/usr/bin/bash" ]; then
@@ -70,12 +95,7 @@ for f in "$DIR"/*; do
     name=${f##*/}
     say "running $name"
     run_script "$f" </dev/null >>"$LOG" 2>&1
-    rc=$?
-    if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then
-        say "$name: killed after ${SCRIPT_TIMEOUT}s"
-    else
-        say "$name: exit $rc"
-    fi
+    result "$name" $? "$SCRIPT_TIMEOUT"
     n=$((n + 1))
 done
 say "done: $n script(s)"
