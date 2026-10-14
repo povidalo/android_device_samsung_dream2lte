@@ -41,12 +41,24 @@ PRODUCT_PACKAGES += \
     set_root_pwd \
     headless_boot
 
-# ROM boot scripts run by headless_boot before /data/local/boot.d: Termux SSH
-# (sshd on 8022) and USB snapshots after each boot (/data/local/usb-boot.log).
+# ROM boot scripts run by headless_boot before /data/local/boot.d: bundled
+# apps with all permissions, Termux SSH (sshd on 8022, key or password login)
+# and USB snapshots after each boot (/data/local/usb-boot.log).
 PRODUCT_PACKAGES += \
+    headless_boot_10-apps \
     headless_boot_20-termux \
     headless_boot_30-usb-report \
-    headless_termux_sshd
+    headless_termux_sshd \
+    headless_termux_default_authinfo \
+    headless_termux_first_login
+
+# Apps installed on first boot by 10-apps (Termux, its plugins, F-Droid): not
+# in git (Termux alone is 109 MB), copied in by the Mac build script as
+# headless_apps/prebuilt/<package>.apk. Shipped as .apk.bin because
+# PRODUCT_COPY_FILES refuses .apk destinations.
+PRODUCT_COPY_FILES += \
+    $(foreach f,$(wildcard device/samsung/dream2lte/headless_apps/prebuilt/*.apk),\
+        $(f):$(TARGET_COPY_OUT_SYSTEM)/etc/headless/apps/$(notdir $(f)).bin)
 
 # SSH public keys for Termux's sshd: not in git, copied in by the Mac build
 # script before every build (the build host's key); installed only if present.

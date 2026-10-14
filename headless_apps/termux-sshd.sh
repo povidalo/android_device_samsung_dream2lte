@@ -1,7 +1,9 @@
 #!/system/bin/sh
 # Started by the headless ROM boot script 20-termux, as root, with the Termux
 # user id as $1: install openssh in Termux once the network is up, then keep
-# sshd running as the Termux user (port 8022, key login).
+# sshd running as the Termux user (port 8022, key or password login; the
+# password option is passed on the command line so sshd_config stays the
+# package's own and upgrades never stop on a changed config file).
 
 TU=$1
 T=/data/data/com.termux
@@ -37,7 +39,7 @@ done
 while :; do
     if ! pidof sshd >/dev/null; then
         log "starting sshd"
-        as_termux sshd >>"$LOG" 2>&1 || log "sshd failed to start"
+        as_termux "sshd -o PasswordAuthentication=yes" >>"$LOG" 2>&1 || log "sshd failed to start"
     fi
     sleep 30
 done

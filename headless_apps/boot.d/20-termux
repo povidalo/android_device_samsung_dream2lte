@@ -1,9 +1,11 @@
 #!/system/bin/sh
 # Headless ROM boot script (after 10-apps): make Termux reachable over SSH.
 # First boot: unpack Termux's base system (Termux only does that from its
-# visible UI, so start it once) and add the ROM's authorized SSH keys. Then,
+# visible UI, so start it once), add the ROM's authorized SSH keys and set the
+# default password "changeme", which the first SSH login must change. Then,
 # in the background: install openssh as soon as the network allows, and keep
-# sshd (port 8022, Termux user, key login) running. Log: /data/local/termux-setup.log
+# sshd (port 8022, Termux user, key or password login) running.
+# Log: /data/local/termux-setup.log
 
 T=/data/data/com.termux
 P=$T/files/usr
@@ -44,7 +46,20 @@ fi
 chown -R "$TU:$TU" "$H/.ssh"
 chmod 700 "$H/.ssh"
 chmod 600 "$H/.ssh/authorized_keys"
-restorecon -R "$H/.ssh" 2>/dev/null
+
+# Password login: termux-auth keeps a PBKDF2 hash in ~/.termux_authinfo. Until
+# one exists, use the ROM's default ("changeme"); the profile.d hook makes
+# the first interactive SSH login replace it.
+if [ ! -f "$H/.termux_authinfo" ]; then
+    cp /system/etc/headless/termux_default_authinfo "$H/.termux_authinfo"
+    chown "$TU:$TU" "$H/.termux_authinfo"
+    chmod 600 "$H/.termux_authinfo"
+    echo "20-termux: default password set"
+fi
+cp /system/etc/headless/termux-first-login.sh "$P/etc/profile.d/headless-first-login.sh"
+chown "$TU:$TU" "$P/etc/profile.d/headless-first-login.sh"
+chmod 644 "$P/etc/profile.d/headless-first-login.sh"
+restorecon -R "$H/.ssh" "$H/.termux_authinfo" "$P/etc/profile.d/headless-first-login.sh" 2>/dev/null
 
 setsid sh /system/etc/headless/termux-sshd.sh "$TU" </dev/null >/dev/null 2>&1 &
 echo "20-termux: sshd supervisor started (log /data/local/termux-setup.log)"
