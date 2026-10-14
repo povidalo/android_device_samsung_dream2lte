@@ -21,8 +21,20 @@ DEVICE_PATH := device/samsung/dream2lte
 # Assert
 TARGET_OTA_ASSERT_DEVICE := dream2lte
 
-# Kernel
-TARGET_KERNEL_CONFIG := exynos8895-dream2lte_defconfig
+# Kernel. The fragment (USB hardware, Docker, network filesystems) is merged on
+# top of the defconfig. Fragments are looked up relative to the kernel's
+# arch/arm64/configs/, hence the path back up to this device tree. It detours
+# through ../../../arch/arm64/configs on purpose: the kernel make runs in
+# obj/KERNEL_OBJ, which is as deep as arch/arm64/configs, so a plain
+# ../../../../../../device/... also names the real file from there and make
+# then calls the target "up to date" instead of merging it.
+TARGET_KERNEL_CONFIG := \
+    exynos8895-dream2lte_defconfig \
+    ../../../arch/arm64/configs/../../../../../../device/samsung/dream2lte/configs/kernel/headless_server.config
+# Lineage recovery (built, but never flashed: the zip writes only system and
+# boot, TWRP stays) keeps the stock kernel. With the server kernel it exceeded
+# the 46 MB recovery partition and failed the build.
+TARGET_KERNEL_RECOVERY_CONFIG := exynos8895-dream2lte_defconfig
 
 # inherit from the proprietary version
 -include vendor/samsung/dream2lte/BoardConfigVendor.mk
