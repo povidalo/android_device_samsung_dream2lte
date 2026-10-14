@@ -33,13 +33,13 @@ prebuilt_etc {
     filename: "30-usb-report",
 }
 
-// Re-attaches the USB-C port in the other role when the role it came up in
-// after a reboot does not work (needs CONFIG_DUAL_ROLE_USB_INTF).
+// USB-C role watcher, run by the init service headless_usb_role (sud.rc):
+// re-attaches the port in the other role when the current role does not work.
 prebuilt_etc {
-    name: "headless_boot_40-usb-role",
-    src: "boot.d/40-usb-role",
-    sub_dir: "headless/boot.d",
-    filename: "40-usb-role",
+    name: "headless_usb_role_watch",
+    src: "usb-role-watch.sh",
+    sub_dir: "headless",
+    filename: "usb-role-watch.sh",
 }
 
 // sshd supervisor started by 20-termux.

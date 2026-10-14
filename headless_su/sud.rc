@@ -19,3 +19,16 @@ service headless_boot /system/bin/headless_boot
 
 on property:sys.boot_completed=1
     start headless_boot
+
+# USB-C role watcher (/system/etc/headless/usb-role-watch.sh): re-attaches the
+# port in the other role when the role it came up in does not work. Started
+# early (data is mounted by "on boot"), because the wrong role shows up ~30 s
+# after power-on, well before boot completes.
+service headless_usb_role /system/bin/sh /system/etc/headless/usb-role-watch.sh
+    user root
+    group root
+    seclabel u:r:sud:s0
+    disabled
+
+on boot
+    start headless_usb_role

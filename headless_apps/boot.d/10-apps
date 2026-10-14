@@ -56,7 +56,7 @@ targets=$( { echo "$bundled"; pm list packages | sed -n 's/^package://p' | grep 
 for pkg in $targets; do
     installed "$pkg" || continue
     n=0
-    for perm in $(dumpsys package "$pkg" | awk '/^    requested permissions:/ { f = 1; next }
+    for perm in $(dumpsys package "$pkg" 2>/dev/null | awk '/^    requested permissions:/ { f = 1; next }
             f && /^      [A-Za-z0-9_.]+/ { sub(/^ +/, ""); sub(/[: ].*/, ""); print; next } f { exit }'); do
         pm grant "$pkg" "$perm" 2>/dev/null && n=$((n + 1))
         special "$pkg" "$perm" 2>/dev/null
