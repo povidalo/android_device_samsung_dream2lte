@@ -26,10 +26,11 @@ for pkg in $bundled; do
     installed "$pkg" && continue
     tmp=/data/local/tmp/headless-install.apk # pm wants a readable .apk path
     cp "$APPS/$pkg.apk.bin" "$tmp" && chmod 644 "$tmp"
+    # Termux:Boot still has to be opened once to get BOOT_COMPLETED; 20-termux
+    # does that after Termux has unpacked, since its screen on top makes
+    # Termux give up unpacking.
     if out=$(pm install -g --user 0 "$tmp" 2>&1); then
         echo "10-apps: installed $pkg"
-        # Leave the "stopped" state, so Termux:Boot gets BOOT_COMPLETED.
-        [ "$pkg" = com.termux.boot ] && am start -n com.termux.boot/.BootActivity >/dev/null 2>&1
     else
         echo "10-apps: installing $pkg failed: $out"
     fi
