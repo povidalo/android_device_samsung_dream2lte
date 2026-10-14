@@ -2,6 +2,14 @@
 // headless_su/headless_boot.sh) from /system/etc/headless/boot.d before the
 // user's /data/local/boot.d, plus the files they use.
 
+// Wi-Fi country code override (SG: all 2.4 and 5 GHz channels).
+prebuilt_etc {
+    name: "headless_boot_05-wifi-country",
+    src: "boot.d/05-wifi-country",
+    sub_dir: "headless/boot.d",
+    filename: "05-wifi-country",
+}
+
 // Installs the APKs bundled in /system/etc/headless/apps (see device.mk) and
 // grants them everything they request.
 prebuilt_etc {

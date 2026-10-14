@@ -1,0 +1,12 @@
+#!/system/bin/sh
+# Headless ROM boot script (first, so the network is up for the scripts after
+# it): Wi-Fi country code SG, the user's choice for the most channels (2.4 GHz
+# 1-13, 5 GHz 36-64, 100-144, 149-165). Without a SIM, Android picks the
+# country from nearby access points (RU here), and the Broadcom firmware's RU
+# table lacks 5 GHz channels 149-165, where the home AP is (channel 153): after
+# a reboot the phone could not see it at all. The override lives in memory
+# only, so it is set at every boot.
+
+WIFI_COUNTRY=SG
+cmd wifi force-country-code enabled "$WIFI_COUNTRY" >/dev/null 2>&1
+echo "05-wifi-country: $(cmd wifi get-country-code 2>&1)"
