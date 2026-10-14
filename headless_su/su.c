@@ -62,8 +62,8 @@
 
 #include "password.h"
 
-#define VERSION_NAME "headless_su 1.2 (password protected)"
-#define VERSION_CODE 3
+#define VERSION_NAME "headless_su 1.3 (password protected)"
+#define VERSION_CODE 4
 #define SOCKET_NAME "headless_su"
 #ifndef DEFAULT_SHELL /* overridable for host testing */
 #define DEFAULT_SHELL "/system/bin/sh"
@@ -76,6 +76,9 @@
 #endif
 #ifndef MAX_SESSIONS
 #define MAX_SESSIONS 128  /* concurrent sessions, running root shells included */
+#endif
+#ifndef PACKAGES_LIST /* overridable for host testing */
+#define PACKAGES_LIST "/data/system/packages.list"
 #endif
 
 enum { MSG_READY = 1, MSG_EXIT = 2, MSG_WINCH = 3, MSG_SIGNAL = 4, MSG_AUTH = 5, MSG_DENY = 6 };
@@ -231,6 +234,45 @@ static int resolve_user(const char *name, uid_t *uid, gid_t *gid) {
     return 0;
 }
 
+/* Switch to uid/gid with the supplementary groups Android gives that user's
+ * processes. An app uid gets what zygote gives the app: the gids its
+ * permissions map to in packages.list (e.g. inet, without which DNS through
+ * netd's dnsproxyd socket fails), everybody, and its cache and shared gids.
+ * Any other non-root user gets none. */
+static int switch_user(uid_t uid, gid_t gid) {
+    gid_t groups[64];
+    int n = 0;
+    unsigned user = uid / 100000, app = uid % 100000;
+    if (app >= 10000 && app <= 19999) { /* AID_APP_START..AID_APP_END */
+        FILE *f = fopen(PACKAGES_LIST, "re");
+        char line[2048];
+        while (f && fgets(line, sizeof line, f)) {
+            /* name uid debuggable datadir seinfo gids ... */
+            char *save, *field = strtok_r(line, " \n", &save);
+            int i = 0;
+            unsigned long u = 0;
+            while (field) {
+                if (i == 1) u = strtoul(field, NULL, 10);
+                if (i == 5 && u == app && strcmp(field, "none")) {
+                    char *s2, *g = strtok_r(field, ",", &s2);
+                    for (; g && n < 60; g = strtok_r(NULL, ",", &s2))
+                        groups[n++] = (gid_t)strtoul(g, NULL, 10);
+                }
+                field = strtok_r(NULL, " \n", &save);
+                i++;
+            }
+        }
+        if (f) fclose(f);
+        groups[n++] = 9997;                                    /* AID_EVERYBODY */
+        groups[n++] = user * 100000 + 20000 + (app - 10000);   /* cache gid */
+        groups[n++] = 50000 + (app - 10000);                   /* shared gid */
+    }
+    if (setgroups((size_t)n, n ? groups : NULL) < 0 || setresgid(gid, gid, gid) < 0 ||
+        setresuid(uid, uid, uid) < 0)
+        return -1;
+    return 0;
+}
+
 /* --------------------------------------------------------------- daemon */
 
 static void exec_child(const struct req *r, pid_t ns_pid, const int *fds, int slave,
@@ -267,8 +309,7 @@ static void exec_child(const struct req *r, pid_t ns_pid, const int *fds, int sl
             uid = (uid_t)r->uid;
             gid = (gid_t)r->uid;
         }
-        if (setgroups(0, NULL) < 0 || setresgid(gid, gid, gid) < 0 ||
-            setresuid(uid, uid, uid) < 0) {
+        if (switch_user(uid, gid) < 0) {
             dprintf(2, "su: cannot switch to uid %d: %s\n", r->uid, strerror(errno));
             _exit(1);
         }
@@ -627,8 +668,7 @@ static int client_main(int argc, char **argv) {
 
     /* Already root: no daemon needed. */
     if (geteuid() == 0) {
-        if (uid != 0 && (setgroups(0, NULL) < 0 || setresgid(gid, gid, gid) < 0 ||
-                         setresuid(uid, uid, uid) < 0)) {
+        if (uid != 0 && switch_user(uid, gid) < 0) {
             perror("su");
             return 1;
         }
