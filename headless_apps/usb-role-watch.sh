@@ -10,6 +10,14 @@
 # to dual-role in the driver, and an unplug restores dual-role too, so the port
 # cannot get stuck (a plain charger keeps charging). At most two flips until
 # the port works for a minute or is unplugged. Log: /data/local/usb-boot.log
+#
+# It also keeps USB hubs awake. The hub driver lets external hubs autosuspend
+# as soon as no device below them is active (0 ms delay), and here a suspended
+# hub's wake-up for a device connecting a moment after the hub enumerated gets
+# lost: after a reboot, a hub that came up before its devices finished
+# connecting stays suspended and empty (seen in 4 of 6 reboots with a hub +
+# HDD + stick), until a replug. Waking it later is enough: the hub then
+# reports the devices that are already there.
 
 TC=/sys/class/typec/port0
 LOG=/data/local/usb-boot.log
@@ -23,11 +31,23 @@ devices() { ls /sys/bus/usb/devices | grep -c -E '^[0-9]+-[0-9.]+$'; } # below t
 configured() { [ "$(cat /sys/class/android_usb/android0/state 2>/dev/null)" = CONFIGURED ]; }
 gadget_ready() { [ "$(getprop sys.usb.ffs.ready)" = 1 ]; }
 
+keep_hubs_awake() { # root hubs included (class 09)
+    for c in /sys/bus/usb/devices/*/bDeviceClass; do
+        [ "$(cat "$c" 2>/dev/null)" = 09 ] || continue
+        d=${c%/bDeviceClass}
+        [ "$(cat "$d/power/control" 2>/dev/null)" = on ] && continue
+        st=$(cat "$d/power/runtime_status" 2>/dev/null)
+        echo on >"$d/power/control" 2>/dev/null || continue
+        [ "$st" = suspended ] && log "hub ${d##*/} had autosuspended: woke it, keeping it awake (uptime $(cut -d' ' -f1 /proc/uptime)s)"
+    done
+}
+
 [ -w "$TC/port_type" ] || { log "no writable $TC/port_type, watcher not running"; exit 0; }
 
 bad=0 flips=0 calm=0
 while :; do
     sleep 3
+    keep_hubs_awake
     r=$(role)
     case $r in
     host) [ "$(devices)" -gt 0 ] && ok=1 || ok=0; grace=$HOST_GRACE ;;
