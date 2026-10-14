@@ -1,0 +1,51 @@
+#!/system/bin/sh
+# Headless ROM boot script: fix a USB-C port that came up in the wrong role.
+# After a warm reboot the S2MM005 USB-C controller can attach as host to a
+# computer (two hosts, nothing works until a replug) or as device to a dock
+# (the dock and everything behind it stays dark); this happens in Android and
+# TWRP alike. Once the boot has settled, check whether the current role works
+# and, if not, re-attach the port in the other role (a software replug):
+# writing "sink"/"source" to the Type-C class port_type makes the driver detach
+# and re-attach as UFP/DFP. A re-attach that finds no partner times out back to
+# dual-role in the driver, and an unplug restores dual-role too, so the port
+# cannot get stuck (e.g. a plain charger keeps charging). At most two flips.
+# Results go to /data/local/usb-boot.log.
+
+TC=/sys/class/typec/port0
+LOG=/data/local/usb-boot.log
+
+log() { echo "$(date '+%F %T') usb-role: $*" >>"$LOG"; }
+role() { sed -n 's/.*\[\(.*\)\].*/\1/p' "$TC/data_role" 2>/dev/null; } # host | device
+partner() { [ -e "$TC/port0-partner" ]; }
+devices() { ls /sys/bus/usb/devices | grep -c -E '^[0-9]+-[0-9.]+$'; } # below the root hubs
+configured() { [ "$(cat /sys/class/android_usb/android0/state 2>/dev/null)" = CONFIGURED ]; }
+works() {
+    case $(role) in
+    host) [ "$(devices)" -gt 0 ] ;;
+    device) ! partner || configured ;; # idle (nothing plugged) also reads "device"
+    *) true ;;
+    esac
+}
+
+if [ ! -w "$TC/port_type" ]; then
+    echo "40-usb-role: no writable $TC/port_type, nothing to do"
+    exit 0
+fi
+
+(
+    sleep 30
+    flips=0
+    while ! works && [ $flips -lt 2 ]; do
+        r=$(role)
+        case $r in host) want=sink ;; device) want=source ;; *) break ;; esac
+        flips=$((flips + 1))
+        log "port is $r but nothing works: re-attaching as $want (flip $flips)"
+        echo $want >"$TC/port_type" 2>/dev/null
+        sleep 20
+    done
+    if [ $flips -gt 0 ]; then
+        if works; then log "now $(role) and working"; else log "still not working as $(role), leaving it"; fi
+    fi
+    chmod 644 "$LOG"
+) </dev/null >/dev/null 2>&1 &
+echo "40-usb-role: role check scheduled (30 s)"

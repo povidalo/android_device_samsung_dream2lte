@@ -43,11 +43,13 @@ PRODUCT_PACKAGES += \
 
 # ROM boot scripts run by headless_boot before /data/local/boot.d: bundled
 # apps with all permissions, Termux SSH (sshd on 8022, key or password login)
-# and USB snapshots after each boot (/data/local/usb-boot.log).
+# USB snapshots after each boot (/data/local/usb-boot.log) and a USB-C role
+# fix for ports that come up in the wrong role after a reboot.
 PRODUCT_PACKAGES += \
     headless_boot_10-apps \
     headless_boot_20-termux \
     headless_boot_30-usb-report \
+    headless_boot_40-usb-role \
     headless_termux_sshd \
     headless_termux_default_authinfo \
     headless_termux_first_login
