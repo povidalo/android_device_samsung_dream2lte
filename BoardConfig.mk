@@ -41,3 +41,9 @@ TARGET_KERNEL_RECOVERY_CONFIG := exynos8895-dream2lte_defconfig
 
 # Headless server pieces (headless_su sepolicy), see vendor/headless
 include vendor/headless/BoardConfigHeadless.mk
+
+# Exynos 8895 keymaster: the 8890q "keystore hackup" in system/security
+# (keystore2 km_compat reports Keymaster 4 UNSUPPORTED_PURPOSE/_DIGEST as OK).
+SOONG_CONFIG_NAMESPACES += headless
+SOONG_CONFIG_headless += km_compat_hackup
+SOONG_CONFIG_headless_km_compat_hackup := true
