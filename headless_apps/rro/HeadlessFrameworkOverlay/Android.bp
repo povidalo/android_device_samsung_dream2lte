@@ -1,9 +1,0 @@
-// Headless server: framework (android) resource overrides as a static RRO.
-// A static device overlay (DEVICE_PACKAGE_OVERLAYS) cannot do this: it is
-// compiled into framework-res before vendor/lineage/overlay/common, whose
-// config_enableAutoPowerModes=true then wins. Runtime overlays apply on top.
-runtime_resource_overlay {
-    name: "HeadlessFrameworkOverlay",
-    sdk_version: "current",
-    product_specific: true,
-}

@@ -1,4 +1,0 @@
-# Copied in by the build script on the Mac before every build, never committed:
-# the build host's SSH public key, and the APKs bundled into the ROM.
-headless_apps/termux_authorized_keys
-headless_apps/prebuilt/

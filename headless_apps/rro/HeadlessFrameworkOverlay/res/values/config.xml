@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- No Doze (DeviceIdleController light and deep idle): a server never
-         goes idle. universal8895-common and vendor/lineage set it to true. -->
-    <bool name="config_enableAutoPowerModes">false</bool>
-</resources>

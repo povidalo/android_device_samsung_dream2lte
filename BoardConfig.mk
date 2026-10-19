@@ -39,5 +39,5 @@ TARGET_KERNEL_RECOVERY_CONFIG := exynos8895-dream2lte_defconfig
 # inherit from the proprietary version
 -include vendor/samsung/dream2lte/BoardConfigVendor.mk
 
-# headless_su (password-gated root daemon + su)
-SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += device/samsung/dream2lte/headless_su/sepolicy
+# Headless server pieces (headless_su sepolicy), see vendor/headless
+include vendor/headless/BoardConfigHeadless.mk
