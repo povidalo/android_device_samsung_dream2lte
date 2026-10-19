@@ -41,11 +41,16 @@ PRODUCT_PACKAGES += \
     set_root_pwd \
     headless_boot
 
-# ROM boot scripts run by headless_boot before /data/local/boot.d: bundled
-# apps with all permissions, Termux SSH (sshd on 8022, key or password login)
-# and USB snapshots after each boot (/data/local/usb-boot.log); plus the USB-C
-# role watcher (init service headless_usb_role in headless_su/sud.rc).
+# ROM boot scripts run by headless_boot before /data/local/boot.d: stay awake
+# (no Doze, battery saver or Wi-Fi power save, plus Wi-Fi/framework overlays;
+# the CPU wakelock itself is taken in headless_su/sud.rc), bundled apps with
+# all permissions, Termux SSH (sshd on 8022, key or password login) and USB
+# snapshots after each boot (/data/local/usb-boot.log); plus the USB-C role
+# watcher (init service headless_usb_role in headless_su/sud.rc).
 PRODUCT_PACKAGES += \
+    headless_boot_02-stay-awake \
+    HeadlessWifiOverlay \
+    HeadlessFrameworkOverlay \
     headless_boot_05-wifi-country \
     headless_boot_10-apps \
     headless_boot_20-termux \

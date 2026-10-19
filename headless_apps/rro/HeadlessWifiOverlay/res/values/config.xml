@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Never put the Wi-Fi driver into its screen-off suspend mode (packet
+         filtering, DTIM skipping, power save): this headless server's screen
+         is always off, and SSH must answer at once. -->
+    <bool translatable="false" name="config_wifiSuspendOptimizationsEnabled">false</bool>
+</resources>

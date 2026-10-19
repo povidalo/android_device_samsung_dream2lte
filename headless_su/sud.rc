@@ -32,3 +32,10 @@ service headless_usb_role /system/bin/sh /system/etc/headless/usb-role-watch.sh
 
 on boot
     start headless_usb_role
+    # Headless server: never suspend. A kernel wakelock (CONFIG_PM_WAKELOCKS)
+    # held from boot on keeps the CPU, and with it USB and Wi-Fi, awake at
+    # all times; Android's suspend attempts just fail. The rest of the
+    # stay-awake setup (Doze, battery saver, Wi-Fi power save, ...) is the ROM
+    # boot script 02-stay-awake. Release by hand, e.g. to measure power:
+    #   echo headless_server > /sys/power/wake_unlock
+    write /sys/power/wake_lock headless_server

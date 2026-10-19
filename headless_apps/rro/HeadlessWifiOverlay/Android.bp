@@ -1,0 +1,7 @@
+// Headless server: Wi-Fi resource overrides, on top of the common tree's
+// WifiOverlay (universal8895-common), which does not touch these values.
+runtime_resource_overlay {
+    name: "HeadlessWifiOverlay",
+    sdk_version: "current",
+    product_specific: true,
+}

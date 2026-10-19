@@ -17,7 +17,9 @@
 # lost: after a reboot, a hub that came up before its devices finished
 # connecting stays suspended and empty (seen in 4 of 6 reboots with a hub +
 # HDD + stick), until a replug. Waking it later is enough: the hub then
-# reports the devices that are already there.
+# reports the devices that are already there. Since the server never sleeps
+# (see 02-stay-awake), the other USB devices are kept from autosuspending too
+# (NICs, disks, serial adapters): no wake-up latency, no lost events.
 
 TC=/sys/class/typec/port0
 LOG=/data/local/usb-boot.log
@@ -31,14 +33,14 @@ devices() { ls /sys/bus/usb/devices | grep -c -E '^[0-9]+-[0-9.]+$'; } # below t
 configured() { [ "$(cat /sys/class/android_usb/android0/state 2>/dev/null)" = CONFIGURED ]; }
 gadget_ready() { [ "$(getprop sys.usb.ffs.ready)" = 1 ]; }
 
-keep_hubs_awake() { # root hubs included (class 09)
+keep_usb_awake() { # every USB device, root hubs included; logs woken hubs
     for c in /sys/bus/usb/devices/*/bDeviceClass; do
-        [ "$(cat "$c" 2>/dev/null)" = 09 ] || continue
         d=${c%/bDeviceClass}
         [ "$(cat "$d/power/control" 2>/dev/null)" = on ] && continue
         st=$(cat "$d/power/runtime_status" 2>/dev/null)
         echo on >"$d/power/control" 2>/dev/null || continue
-        [ "$st" = suspended ] && log "hub ${d##*/} had autosuspended: woke it, keeping it awake (uptime $(cut -d' ' -f1 /proc/uptime)s)"
+        [ "$st" = suspended ] && [ "$(cat "$c" 2>/dev/null)" = 09 ] &&
+            log "hub ${d##*/} had autosuspended: woke it, keeping it awake (uptime $(cut -d' ' -f1 /proc/uptime)s)"
     done
 }
 
@@ -47,7 +49,7 @@ keep_hubs_awake() { # root hubs included (class 09)
 bad=0 flips=0 calm=0
 while :; do
     sleep 3
-    keep_hubs_awake
+    keep_usb_awake
     r=$(role)
     case $r in
     host) [ "$(devices)" -gt 0 ] && ok=1 || ok=0; grace=$HOST_GRACE ;;

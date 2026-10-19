@@ -1,0 +1,36 @@
+#!/system/bin/sh
+# Headless ROM boot script: keep every subsystem awake, as a server should.
+# The CPU itself never suspends: init holds the kernel wakelock
+# "headless_server" (headless_su/sud.rc). Here the power saving that Android
+# and the Wi-Fi stack do on their own, re-applied at every boot because some
+# of it lives in memory only. Persistent counterparts in the image: Doze off
+# (config_enableAutoPowerModes=false, HeadlessFrameworkOverlay) and no Wi-Fi
+# suspend optimizations when the screen is off (HeadlessWifiOverlay).
+
+# Doze, light and deep (the overlay should already keep it off; this also
+# covers a build where another overlay wins).
+dumpsys deviceidle disable all >/dev/null 2>&1
+
+# App standby buckets, adaptive battery, battery saver incl. its automatic
+# trigger, and the cached-apps freezer (applies from the next boot).
+settings put global app_standby_enabled 0
+settings put global adaptive_battery_management_enabled 0
+settings put global low_power 0
+settings put global low_power_trigger_level 0
+settings put global automatic_power_save_mode 0
+settings put global cached_apps_freezer disabled
+
+# Wi-Fi: no power save while connected (high-performance and low-latency
+# modes; both in memory only). The Broadcom HAL may not support low latency,
+# hence the logged result.
+hp=$(cmd wifi force-hi-perf-mode enabled 2>&1)
+ll=$(cmd wifi force-low-latency-mode enabled 2>&1)
+
+# Cellular: keep mobile data up even while Wi-Fi or Ethernet is the default
+# network (instant failover; nothing to do without a SIM).
+settings put global mobile_data_always_on 1
+
+wl=$(cat /sys/power/wake_lock 2>/dev/null)
+case " $wl " in *" headless_server "*) wl=held ;; *) wl="NOT held ($wl)" ;; esac
+echo "02-stay-awake: kernel wakelock $wl; doze light=$(dumpsys deviceidle enabled light 2>/dev/null)" \
+    "deep=$(dumpsys deviceidle enabled deep 2>/dev/null) (0 = off); wifi hi-perf ${hp:-ok}, low-latency ${ll:-ok}"

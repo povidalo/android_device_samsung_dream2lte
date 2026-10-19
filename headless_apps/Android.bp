@@ -2,6 +2,15 @@
 // headless_su/headless_boot.sh) from /system/etc/headless/boot.d before the
 // user's /data/local/boot.d, plus the files they use.
 
+// Stay awake: Doze, app standby, battery saver, freezer and Wi-Fi power save
+// off at every boot (the CPU wakelock itself is taken by init, sud.rc).
+prebuilt_etc {
+    name: "headless_boot_02-stay-awake",
+    src: "boot.d/02-stay-awake",
+    sub_dir: "headless/boot.d",
+    filename: "02-stay-awake",
+}
+
 // Wi-Fi country code override (SG: all 2.4 and 5 GHz channels).
 prebuilt_etc {
     name: "headless_boot_05-wifi-country",
