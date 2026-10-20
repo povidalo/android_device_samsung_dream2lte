@@ -1,0 +1,71 @@
+#!/system/bin/sh
+# Headless ROM boot script (dream2lte, Exynos 8895): the CPU at full power at
+# all times, like mido's script of the same name.
+#
+#   - all 8 cores online: Exynos core hotplug off (/sys/power/cpuhotplug/
+#     enabled = 0 brings every core online and stops hotplugging);
+#   - governor 'performance' on both clusters (top frequency; the kernel
+#     default is interactive);
+#   - no CPU idle states below WFI: every cpuidle state except state0 is
+#     disabled, so idle cores (and clusters) stay powered instead of powering
+#     down.
+#
+# Thermal protection is left to the kernel: the big cluster's power allocator
+# (see the kernel device tree) and the thermal driver, which takes big cores
+# offline at 96 C. So cores are not forced back online later, and nothing
+# here touches frequency limits. Suspend, Doze and Wi-Fi power save are off
+# already (vendor/headless: sud.rc wakelock, 02-stay-awake, the overlays).
+#
+# A background loop re-applies hotplug-off, the governor and the idle states
+# every 30 s in case the power HAL or anything else changes them, and logs it
+# when it does. To leave the CPU to the defaults:
+#   setprop persist.headless.cpu_full_power 0   (then reboot)
+
+LOG=/data/local/boot.d.log
+C=/sys/devices/system/cpu
+HP=/sys/power/cpuhotplug/enabled
+
+log() { echo "$(date '+%F %T') 03-cpu-full-power: $*" >>"$LOG"; }
+
+if [ "$(getprop persist.headless.cpu_full_power)" = 0 ]; then
+    echo "03-cpu-full-power: off (persist.headless.cpu_full_power=0)"
+    exit 0
+fi
+
+settings() { # hotplug, governor, idle states; prints what it changed
+    changed=
+    if [ -f "$HP" ] && [ "$(cat "$HP")" != 0 ]; then
+        echo 0 >"$HP" 2>/dev/null && changed="$changed hotplug:off"
+    fi
+    for g in $C/cpufreq/policy*/scaling_governor $C/cpu[0-9]*/cpufreq/scaling_governor; do
+        [ -f "$g" ] && [ "$(cat "$g")" != performance ] || continue
+        p=${g%/scaling_governor}
+        p=${p%/cpufreq} # .../cpuN/cpufreq -> cpuN; .../cpufreq/policyN stays
+        echo performance >"$g" 2>/dev/null && changed="$changed ${p##*/}:performance"
+    done
+    n=0
+    for d in $C/cpu[0-9]*/cpuidle/state[1-9]*/disable; do
+        [ -f "$d" ] && [ "$(cat "$d")" != 1 ] || continue
+        echo 1 >"$d" 2>/dev/null && n=$((n + 1))
+    done
+    [ $n -gt 0 ] && changed="$changed idle-states-disabled:$n"
+    echo "$changed"
+}
+
+state() {
+    echo "online $(cat $C/online), hotplug $(cat "$HP" 2>/dev/null)," \
+        "governor $(cat $C/cpu0/cpufreq/scaling_governor 2>/dev/null)/$(cat $C/cpu4/cpufreq/scaling_governor 2>/dev/null)," \
+        "cpu0 $(cat $C/cpu0/cpufreq/scaling_cur_freq 2>/dev/null) kHz (max $(cat $C/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null))," \
+        "cpu4 $(cat $C/cpu4/cpufreq/scaling_cur_freq 2>/dev/null) kHz (max $(cat $C/cpu4/cpufreq/cpuinfo_max_freq 2>/dev/null))," \
+        "idle states enabled: $(cat $C/cpu[0-9]*/cpuidle/state[1-9]*/disable 2>/dev/null | grep -c 0)"
+}
+
+(
+    settings >/dev/null
+    log "applied: $(state)"
+    while :; do
+        sleep 30
+        c=$(settings)
+        [ -n "$c" ] && log "re-applied:$c; $(state)"
+    done
+) </dev/null >/dev/null 2>&1 &

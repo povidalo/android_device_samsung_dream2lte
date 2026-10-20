@@ -29,3 +29,8 @@ $(call inherit-product-if-exists, vendor/samsung/dream2lte/dream2lte-vendor.mk)
 # (headless_su), root boot scripts, stay awake, bundled Termux with SSH. Shared
 # with our other headless devices, see vendor/headless.
 $(call inherit-product, vendor/headless/headless.mk)
+
+# Headless server, dream2lte only: the CPU at full power (all cores online,
+# performance governor, no CPU idle states below WFI), see headless/.
+PRODUCT_PACKAGES += \
+    headless_boot_03-cpu-full-power_dream2lte

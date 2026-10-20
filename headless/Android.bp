@@ -1,0 +1,10 @@
+// Headless server, dream2lte only (the shared pieces are in vendor/headless).
+
+// ROM boot script, run by headless_boot with the ones from vendor/headless:
+// all cores online, 'performance' governor, no CPU idle states below WFI.
+prebuilt_etc {
+    name: "headless_boot_03-cpu-full-power_dream2lte",
+    src: "03-cpu-full-power",
+    sub_dir: "headless/boot.d",
+    filename: "03-cpu-full-power",
+}
