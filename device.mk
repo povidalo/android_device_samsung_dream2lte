@@ -32,5 +32,7 @@ $(call inherit-product, vendor/headless/headless.mk)
 
 # Headless server, dream2lte only: the CPU at full power (all cores online,
 # performance governor, no CPU idle states below WFI), see headless/.
+PRODUCT_SOONG_NAMESPACES += \
+    device/samsung/dream2lte/headless
 PRODUCT_PACKAGES += \
     headless_boot_03-cpu-full-power_dream2lte

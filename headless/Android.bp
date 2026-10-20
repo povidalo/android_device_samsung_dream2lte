@@ -1,4 +1,8 @@
 // Headless server, dream2lte only (the shared pieces are in vendor/headless).
+// In its own namespace (exported by device.mk), so other products such as
+// mido, which install their own boot.d/03-cpu-full-power, never see it.
+soong_namespace {
+}
 
 // ROM boot script, run by headless_boot with the ones from vendor/headless:
 // all cores online, 'performance' governor, no CPU idle states below WFI.
